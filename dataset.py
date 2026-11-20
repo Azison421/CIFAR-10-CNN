@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 from torchvision.datasets import CIFAR10
 
@@ -16,6 +16,7 @@ CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
 CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 DEFAULT_BATCH_SIZE = 128
 DEFAULT_SEED = 42
+VALIDATION_SIZE = 5_000
 
 
 def set_seed(seed: int) -> None:
@@ -24,26 +25,46 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def load_cifar10() -> tuple[CIFAR10, CIFAR10]:
-    train_transform = transforms.Compose([
+def _train_transform() -> transforms.Compose:
+    return transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
         transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
     ])
-    test_transform = transforms.Compose([
+
+
+def _eval_transform() -> transforms.Compose:
+    return transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
     ])
-    train_set = CIFAR10(root=DATA_DIR, train=True, transform=train_transform, download=True)
-    test_set = CIFAR10(root=DATA_DIR, train=False, transform=test_transform, download=True)
-    return train_set, test_set
+
+
+def load_test_set() -> CIFAR10:
+    return CIFAR10(root=DATA_DIR, train=False, transform=_eval_transform(), download=True)
+
+
+def load_cifar10() -> tuple[CIFAR10, CIFAR10]:
+    train_set = CIFAR10(root=DATA_DIR, train=True, transform=_train_transform(), download=True)
+    return train_set, load_test_set()
+
+
+def load_train_validation(seed: int = DEFAULT_SEED) -> tuple[Subset, Subset]:
+    train_source = CIFAR10(root=DATA_DIR, train=True, transform=_train_transform(), download=True)
+    val_source = CIFAR10(root=DATA_DIR, train=True, transform=_eval_transform())
+
+    generator = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(len(train_source), generator=generator).tolist()
+    train_set = Subset(train_source, indices[VALIDATION_SIZE:])
+    val_set = Subset(val_source, indices[:VALIDATION_SIZE])
+    return train_set, val_set
 
 
 def make_loaders(
-    train_set: CIFAR10,
-    test_set: CIFAR10,
+    train_set: Dataset,
+    eval_set: Dataset,
     batch_size: int = DEFAULT_BATCH_SIZE,
     seed: int = DEFAULT_SEED,
 ) -> tuple[DataLoader, DataLoader]:
@@ -51,8 +72,8 @@ def make_loaders(
         train_set, batch_size=batch_size, shuffle=True,
         generator=torch.Generator().manual_seed(seed),
     )
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
-    return train_loader, test_loader
+    eval_loader = DataLoader(eval_set, batch_size=batch_size, shuffle=False)
+    return train_loader, eval_loader
 
 
 def print_distribution(train_set: CIFAR10, test_set: CIFAR10) -> None:
