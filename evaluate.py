@@ -4,31 +4,50 @@ import argparse
 import csv
 import json
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import torch
+from torch import nn
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator, PercentFormatter
 from sklearn.metrics import ConfusionMatrixDisplay, classification_report, confusion_matrix
 from torch.utils.data import DataLoader
 
 from dataset import load_test_set, set_seed
-from model import Cifar10CNN
+from model import DEFAULT_DROPOUT, build_model
 from train import OUTPUT_DIR
+
+
+def measure_batch_inference(model: nn.Module, images: torch.Tensor, device: torch.device) -> float:
+    model(images)
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    started_at = perf_counter()
+    repeats = 10
+    for _ in range(repeats):
+        model(images)
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    return (perf_counter() - started_at) * 1_000 / repeats
 
 
 @torch.inference_mode()
 def predict(
-    model: Cifar10CNN, test_loader: DataLoader, device: torch.device,
-) -> tuple[list[int], list[int]]:
+    model: nn.Module, test_loader: DataLoader, device: torch.device,
+) -> tuple[list[int], list[int], float]:
     model.eval()
     y_true = []
     y_pred = []
+    inference_ms = 0.0
     for images, labels in test_loader:
-        logits = model(images.to(device))
+        images = images.to(device)
+        if not y_true:
+            inference_ms = measure_batch_inference(model, images, device)
+        logits = model(images)
         y_true.extend(labels.tolist())
         y_pred.extend(logits.argmax(dim=1).cpu().tolist())
-    return y_true, y_pred
+    return y_true, y_pred, inference_ms
 
 
 def plot_training_curves(history: dict, path: Path) -> None:
@@ -85,14 +104,17 @@ def main() -> None:
             parser.error(f"找不到训练产物 {path}。请先运行 train.py。")
 
     history = json.loads(history_path.read_text(encoding="utf-8"))
-    set_seed(history["config"]["seed"])
+    config = history["config"]
+    set_seed(config["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Cifar10CNN()
+    arch = config.get("arch", "baseline")
+    dropout = config.get("dropout", DEFAULT_DROPOUT[arch])
+    model = build_model(arch, dropout)
     model.load_state_dict(torch.load(checkpoint_path, map_location="cpu", weights_only=True))
     model.to(device)
     test_set = load_test_set()
-    test_loader = DataLoader(test_set, batch_size=history["config"]["batch_size"], shuffle=False)
-    y_true, y_pred = predict(model, test_loader, device)
+    test_loader = DataLoader(test_set, batch_size=config["batch_size"], shuffle=False)
+    y_true, y_pred, inference_ms = predict(model, test_loader, device)
 
     class_names = test_set.classes
     class_ids = list(range(len(class_names)))
@@ -100,12 +122,17 @@ def main() -> None:
                                    digits=4, zero_division=0)
     matrix = confusion_matrix(y_true, y_pred, labels=class_ids)
 
-    (args.output_dir / "classification_report.txt").write_text(report, encoding="utf-8")
+    timing = (
+        f"inference_device: {device}\n"
+        f"inference_batch_size: {min(config['batch_size'], len(test_set))}\n"
+        f"inference_ms_per_batch: {inference_ms:.4f}\n"
+    )
+    (args.output_dir / "classification_report.txt").write_text(timing + "\n" + report, encoding="utf-8")
     plot_training_curves(history, args.output_dir / "training_curves.png")
     save_confusion_matrix(matrix, class_names, args.output_dir)
 
     print(f"设备 {device} | 官方测试集 {len(test_set):,} 张 | 权重来自第 {history['best_epoch']} 轮")
-    print(report)
+    print(timing + "\n" + report)
     print("混淆矩阵各行是真实类别，各列是预测类别，类别顺序与分类报告相同。")
     print(matrix)
     print(f"评估结果已保存到 {args.output_dir.resolve()}")

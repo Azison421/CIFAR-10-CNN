@@ -4,12 +4,14 @@ import argparse
 import random
 from collections import Counter
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 from torchvision.datasets import CIFAR10
+from torchvision.datasets.utils import download_url, extract_archive
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
@@ -17,22 +19,52 @@ CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 DEFAULT_BATCH_SIZE = 128
 DEFAULT_SEED = 42
 VALIDATION_SIZE = 5_000
+AUG_LEVELS = ("standard", "heavy")
+
+
+class _CachedCIFAR10(CIFAR10):
+    def download(self) -> None:
+        root = Path(self.root).resolve()
+        cache = root / self.base_folder
+        if not cache.exists():
+            super().download()
+            return
+        if self._check_integrity():
+            return
+
+        download_url(self.url, root, filename=self.filename, md5=self.tgz_md5)
+        # Extract away from the old files, which may be read-only on Windows.
+        with TemporaryDirectory(prefix=".cifar10-", dir=root) as directory:
+            staging = Path(directory)
+            extract_archive(root / self.filename, staging)
+            previous = staging / "previous"
+            cache.rename(previous)
+            try:
+                (staging / self.base_folder).rename(cache)
+            except OSError:
+                previous.rename(cache)
+                raise
 
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
-def _train_transform() -> transforms.Compose:
-    return transforms.Compose([
+def _train_transform(aug_level: str) -> transforms.Compose:
+    jitter = 0.5 if aug_level == "heavy" else 0.2
+    operations = [
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.ColorJitter(brightness=jitter, contrast=jitter, saturation=jitter),
         transforms.ToTensor(),
         transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD),
-    ])
+    ]
+    if aug_level == "heavy":
+        operations.append(transforms.RandomErasing(p=0.5))
+    return transforms.Compose(operations)
 
 
 def _eval_transform() -> transforms.Compose:
@@ -43,16 +75,16 @@ def _eval_transform() -> transforms.Compose:
 
 
 def load_test_set() -> CIFAR10:
-    return CIFAR10(root=DATA_DIR, train=False, transform=_eval_transform(), download=True)
+    return _CachedCIFAR10(root=DATA_DIR, train=False, transform=_eval_transform(), download=True)
 
 
-def load_cifar10() -> tuple[CIFAR10, CIFAR10]:
-    train_set = CIFAR10(root=DATA_DIR, train=True, transform=_train_transform(), download=True)
+def load_cifar10(aug_level: str = "standard") -> tuple[CIFAR10, CIFAR10]:
+    train_set = _CachedCIFAR10(root=DATA_DIR, train=True, transform=_train_transform(aug_level), download=True)
     return train_set, load_test_set()
 
 
-def load_train_validation(seed: int = DEFAULT_SEED) -> tuple[Subset, Subset]:
-    train_source = CIFAR10(root=DATA_DIR, train=True, transform=_train_transform(), download=True)
+def load_train_validation(seed: int = DEFAULT_SEED, aug_level: str = "standard") -> tuple[Subset, Subset]:
+    train_source = _CachedCIFAR10(root=DATA_DIR, train=True, transform=_train_transform(aug_level), download=True)
     val_source = CIFAR10(root=DATA_DIR, train=True, transform=_eval_transform())
 
     generator = torch.Generator().manual_seed(seed)
@@ -99,10 +131,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="加载 CIFAR-10 并检查类别分布与预处理结果")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="批大小，默认 128")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="随机种子，默认 42")
+    parser.add_argument("--aug-level", choices=AUG_LEVELS, default="standard", help="训练集增强强度")
     args = parser.parse_args()
 
     set_seed(args.seed)
-    train_set, test_set = load_cifar10()
+    train_set, test_set = load_cifar10(args.aug_level)
     train_loader, test_loader = make_loaders(train_set, test_set, args.batch_size, args.seed)
     print_distribution(train_set, test_set)
 

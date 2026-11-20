@@ -38,3 +38,24 @@ python -m venv .venv
 - `best_cnn_cifar10.pth` 和 `history.json` 保存最佳验证权重、训练配置和逐轮指标。
 - `classification_report.txt` 记录总体和逐类测试指标。
 - `training_curves.png` 标出最佳轮次，`confusion_matrix.csv` 和 `confusion_matrix.png` 按真实类别为行、预测类别为列记录计数。
+
+## 优化对比实验
+
+四组实验使用相同的 45,000／5,000 训练验证划分、种子 42 和批大小 128。运行以下脚本可依次训练、评估并汇总四组结果。
+
+```powershell
+.\run_experiments.ps1
+```
+
+| 组别 | 轮数 | 架构 | 优化器与调度 | 标签平滑 | Dropout | 数据增强 |
+| --- | ---: | --- | --- | ---: | ---: | --- |
+| Exp0 | 30 | baseline | Adam，固定学习率 | 0 | 0.5 | standard |
+| Exp1 | 50 | baseline | AdamW，预热 3 轮后余弦退火 | 0.05 | 0.5 | standard |
+| Exp2 | 50 | deeper | 同 Exp1 | 0.05 | 0.3 | standard |
+| Exp3 | 50 | deeper | 同 Exp1 | 0.05 | 0.7 | heavy |
+
+四组的目标学习率均为 `0.001`。Exp0 的权重衰减为 `0.0001`，其余为 `0.0005`。Exp3 比较强数据增强与高 Dropout 的组合效果，实际影响以结果为准。验证 Loss 统一使用普通交叉熵，标签平滑只用于训练。
+
+`train.py` 可单独指定 `--arch`、`--optimizer`、`--scheduler`、`--label-smoothing`、`--dropout` 和 `--aug-level`。SGD 的动量为 0.9。评估从对应训练日志读取模型配置。日志记录参数量、每轮学习率和耗时。分类报告记录首个测试批次预热后的 10 次前向传播平均耗时，不计数据搬运。
+
+`compare.py` 汇总四组测试指标与猫、狗、鸟的 F1 变化，按验证准确率从 Exp1–Exp3 选择对比对象。测试集用于报告，不参与选择。汇总表和三张图分别保存为 `outputs/comparison_summary.csv`、`outputs/comparison_curves.png`、`outputs/comparison_class_f1.png` 和 `outputs/comparison_cm_diff.png`。
