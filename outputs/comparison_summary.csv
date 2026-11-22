@@ -1,0 +1,5 @@
+Experiment,Parameters,Best epoch,Best val acc (%),Test acc (%),Macro precision (%),Macro recall (%),Macro F1 (%),cat F1 delta (pp),dog F1 delta (pp),bird F1 delta (pp),Train time (s),Inference (ms/batch),Inference device
+exp0_baseline,620810,28,82.72,81.81,82.01,81.81,81.81,+0.00,+0.00,+0.00,336.22,0.6480,cuda
+exp1_scheduler,620810,46,85.84,85.27,85.16,85.27,85.19,+5.15,+3.28,+5.89,904.28,0.8346,cuda
+exp2_deeper_cnn,1149770,47,92.02,91.29,91.28,91.29,91.28,+17.68,+13.03,+13.34,1198.18,6.9967,cuda
+exp3_over_reg,1149770,47,91.62,90.86,90.85,90.86,90.85,+15.75,+11.52,+13.37,1352.53,7.0705,cuda

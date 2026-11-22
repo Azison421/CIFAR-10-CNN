@@ -1,0 +1,20 @@
+inference_device: cuda
+inference_batch_size: 128
+inference_ms_per_batch: 0.8346
+
+              precision    recall  f1-score   support
+
+    airplane     0.8531    0.8770    0.8649      1000
+  automobile     0.9381    0.9390    0.9385      1000
+        bird     0.8024    0.7960    0.7992      1000
+         cat     0.7346    0.6780    0.7051      1000
+        deer     0.8416    0.8290    0.8353      1000
+         dog     0.7772    0.7780    0.7776      1000
+        frog     0.8639    0.9010    0.8820      1000
+       horse     0.8892    0.8910    0.8901      1000
+        ship     0.9230    0.9230    0.9230      1000
+       truck     0.8927    0.9150    0.9037      1000
+
+    accuracy                         0.8527     10000
+   macro avg     0.8516    0.8527    0.8519     10000
+weighted avg     0.8516    0.8527    0.8519     10000

@@ -1,10 +1,21 @@
 # 基于 CNN 的 CIFAR-10 图像分类
 
-《数字图像处理》实验一。使用 PyTorch 训练三块卷积的 CNN，在 CIFAR-10 官方测试集上正确分类 **8,218 / 10,000** 张。
+《数字图像处理》实验一。使用 PyTorch 完成 CIFAR-10 图像分类的基线实验和三组对照实验。
 
 ## 实验结果
 
-第 30 轮的验证准确率最高，为 **82.98%**。用该轮权重评估，CUDA 测试准确率为 **82.18%**。宏平均与加权平均相同，Precision 为 **82.56%**，Recall 为 **82.18%**，F1 为 **82.29%**。CPU 复算准确率为 **82.17%**。两次评估只有一张图像的预测不同，CUDA 判为猫，CPU 判为鹿。
+正式对比实验使用 CUDA 训练与评估。每组的权重按验证准确率选取。
+
+| 实验 | 最佳轮次 | 验证准确率 | 测试准确率 | 宏平均 F1 |
+| --- | ---: | ---: | ---: | ---: |
+| [Exp0 基线](outputs/exp0_baseline/) | 28 | 82.72% | 81.81% | 81.81% |
+| [Exp1 训练策略](outputs/exp1_scheduler/) | 46 | 85.84% | 85.27% | 85.19% |
+| [Exp2 加深网络](outputs/exp2_deeper_cnn/) | 47 | **92.02%** | **91.29%** | **91.28%** |
+| [Exp3 强正则化](outputs/exp3_over_reg/) | 47 | 91.62% | 90.86% | 90.85% |
+
+[对比汇总 CSV](outputs/comparison_summary.csv) · [验证指标与学习率曲线](outputs/comparison_curves.png) · [逐类 F1 对比图](outputs/comparison_class_f1.png) · [混淆矩阵对比图](outputs/comparison_cm_diff.png)
+
+初版基线在第 30 轮取得 82.98% 的验证准确率，CUDA 测试准确率为 82.18%，CPU 复算为 82.17%。[初版训练曲线](outputs/training_curves.png) · [初版分类报告](outputs/classification_report.txt) · [初版混淆矩阵](outputs/confusion_matrix.png)
 
 ## 复现实验
 
@@ -33,7 +44,7 @@ python -m venv .venv
 
 ## 输出文件
 
-脚本在本地生成 `outputs/`。用 `--output-dir` 指定其他目录时，训练和评估使用同一个目录。
+已发布的实验成果位于 `outputs/`。若要另存复现结果，训练和评估可使用相同的 `--output-dir`，四组脚本可用 `-OutputDir` 指定新目录。
 
 - `best_cnn_cifar10.pth` 和 `history.json` 保存最佳验证权重、训练配置和逐轮指标。
 - `classification_report.txt` 记录总体和逐类测试指标。
@@ -58,4 +69,6 @@ python -m venv .venv
 
 `train.py` 可单独指定 `--arch`、`--optimizer`、`--scheduler`、`--label-smoothing`、`--dropout` 和 `--aug-level`。SGD 的动量为 0.9。评估从对应训练日志读取模型配置。日志记录参数量、每轮学习率和耗时。分类报告记录首个测试批次预热后的 10 次前向传播平均耗时，不计数据搬运。
 
-`compare.py` 汇总四组测试指标与猫、狗、鸟的 F1 变化，按验证准确率从 Exp1–Exp3 选择对比对象。测试集用于报告，不参与选择。汇总表和三张图分别保存为 `outputs/comparison_summary.csv`、`outputs/comparison_curves.png`、`outputs/comparison_class_f1.png` 和 `outputs/comparison_cm_diff.png`。
+`compare.py` 汇总四组测试指标与猫、狗、鸟的 F1 变化，按验证准确率从 Exp1–Exp3 选择对比对象。测试集用于报告，不参与选择。
+
+[基础实验实施方案](cnn_cifar_10.md) · [优化与对比实验方案](code_artifact.md)
